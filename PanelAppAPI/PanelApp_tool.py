@@ -1,11 +1,13 @@
 import requests
-import json, re, sys, argparse, os
+import json, re, argparse, os
 from datetime import datetime
 import pandas as pd
 
+PANELAPP_URL = "https://panelapp.genomicsengland.co.uk/api/v1"
+
 #Interface to PanelApp API. Allow extraction of genes using panel IDs or disease terms
 class PanelApp():
-    def __init__(self, url):
+    def __init__(self, url=PANELAPP_URL):
         self._url = url
         panels_list = list()
         uri = self._url + "/panels"
@@ -47,8 +49,8 @@ class PanelApp():
         
         return pd.concat(panels)
               
-    def getPanelId(self, name='.*', disease='.*'):
-        selected_panels = self.listPanels(name, disease)
+    def getPanelId(self, name=False, disease=False):
+        selected_panels = self.listPanels(name=name, disease=disease)
         return list(selected_panels.index)
     
     def getGenes(self, pid=False, name=False, disease=False, level=3, out_format="df", build="GRCh38"):
@@ -108,12 +110,15 @@ class PanelApp():
         else:
             return False, genes
     
-    def dumpPanels(self, output_dir, level=3, build="GRCh38"):
+    def dumpPanels(self, output_dir, panels="all", level=3, build="GRCh38"):
+        if panels == "all": panels = list(self._panels.index)
         index_file = output_dir+"/Index_table_"+self.time+".tsv"
-        index_df = self._panels
+        index_df = self._panels.loc[panels]
         index_df['n_green'] = 0
-        for panel_id in list(self._panels.index):
-            print("Saving panel ", panel_id)
+        n_written_panels = 0
+        for panel_id in panels:
+            n_written_panels += 1
+            #print("Saving panel ", panel_id)
             genes_file = output_dir+"/"+build+"_Panel_"+str(panel_id)+".bed"
             success, genes = self.getGenes(pid = panel_id, level=0, build=build, out_format="detailed_bed")
             if success:
@@ -129,7 +134,7 @@ class PanelApp():
         index_df = index_df[['name', 'disease_group', 'disease_sub_group', 'version', 'version_created', 'n_genes', 'n_green', 'relevant_disorders']]
         index_df.sort_values(by=['name'], inplace=True)
         index_df.to_csv(index_file, sep="\t")
-
+        return(n_written_panels)
 
 def now(sep=""):
     now = datetime.now()
@@ -139,8 +144,7 @@ def now(sep=""):
 #Main function is to download all panels to a folder
 #Without arguments will download green and amber genes for all GRCh38 panels to panelapp_[currentdate]
 #Each panel is dumped in a file named by panel index. A master table describing each panel is also saved
-if __name__ == "__main__":
-    PANELAPP_URL = "https://panelapp.genomicsengland.co.uk/api/v1"
+def dumpPanels():
 
     parser = argparse.ArgumentParser(description='Dump all genes in PanelApp panels to bed like tables')
     parser.add_argument("-w", "--url", help="panelApp url", action="store", required=False, default=PANELAPP_URL)
@@ -153,6 +157,7 @@ if __name__ == "__main__":
 
     panelapp = PanelApp(args.url)
 
-    panelapp.dumpPanels(args.out, build=args.build, level=args.minlevel)
+    n_panels = panelapp.dumpPanels(args.out, build=args.build, level=args.minlevel)
 
+    print(n_panels, "saved")
     print("All panels saved to", args.out)
